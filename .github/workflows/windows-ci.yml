@@ -5,7 +5,9 @@ on:
     branches: [master]
   pull_request:
     branches: [master]
-
+env:
+  CARGO_TERM_COLOR: always
+  OPENCV_INCLUDE_PATHS: "+C:\\tools\\opencv\\build\\include"
 jobs:
   build:
     runs-on: windows-latest
@@ -14,31 +16,44 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Rust (MSVC)
-        uses: actions/setup-rust@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Install OpenCV via vcpkg
-        run: |
-          choco install llvm
-          git clone https://github.com/microsoft/vcpkg.git
-          .\vcpkg\bootstrap-vcpkg.bat
-          .\vcpkg\vcpkg install opencv[core] --triplet x64-windows
+      # - name: Install llvm via choco
+      #   run: choco install llvm
 
-      - name: Set VCPKG env vars
+      - name: Install opencv via choco
+        run: choco install opencv
+
+      - name: Find OpenCV library and set environment variables
         shell: pwsh
         run: |
-          echo "VCPKG_ROOT=${{ github.workspace }}\vcpkg" >> $env:GITHUB_ENV
-          echo "OPENCV_DIR=${{ github.workspace }}\vcpkg\installed\x64-windows" >> $env:GITHUB_ENV
+          $files = Get-ChildItem -Path "C:\tools\opencv" -Recurse -Filter "opencv_world*.lib" |
+            Where-Object { $_.Name -notmatch "d\.lib$" }
+
+          if ($files.Count -eq 0) {
+              Write-Error "No matching OpenCV release libraries found (excluding debug builds)."
+              exit 1
+          }
+
+          $libFile = $files | Sort-Object Name -Descending | Select-Object -First 1
+
+          $libName = [System.IO.Path]::GetFileNameWithoutExtension($libFile.Name)
+          $libPath = $libFile.DirectoryName
+
+          echo "Found library: $libName in $libPath"
+
+          echo "OPENCV_LINK_LIBS=$libName" >> $env:GITHUB_ENV
+          echo "OPENCV_LINK_PATHS=+$libPath" >> $env:GITHUB_ENV
+      - name: Tree C:\tools\opencv
+        shell: pwsh
+        run: tree C:\tools\opencv /F
 
       - name: Build the project
-        run: cargo build --verbose
+        run: cargo build --release
 
       - name: Upload executable as artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-exe
-          path: target/release/imgproc_save_with_image.exe
+          path: target/release/opencv_example.exe
