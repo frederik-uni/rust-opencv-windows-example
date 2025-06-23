@@ -1,0 +1,44 @@
+name: Windows Build
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust (MSVC)
+        uses: actions/setup-rust@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - name: Install OpenCV via vcpkg
+        run: |
+          choco install llvm
+          git clone https://github.com/microsoft/vcpkg.git
+          .\vcpkg\bootstrap-vcpkg.bat
+          .\vcpkg\vcpkg install opencv[core] --triplet x64-windows
+
+      - name: Set VCPKG env vars
+        shell: pwsh
+        run: |
+          echo "VCPKG_ROOT=${{ github.workspace }}\vcpkg" >> $env:GITHUB_ENV
+          echo "OPENCV_DIR=${{ github.workspace }}\vcpkg\installed\x64-windows" >> $env:GITHUB_ENV
+
+      - name: Build the project
+        run: cargo build --verbose
+
+      - name: Upload executable as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe
+          path: target/release/imgproc_save_with_image.exe
